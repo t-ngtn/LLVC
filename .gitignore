@@ -2,3 +2,6 @@
 *__pycache__*
 f_8312_ls360/*
 LibriSpeech/*
+.venv
+llvc_models/*
+converted_out/*
