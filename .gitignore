@@ -5,3 +5,5 @@ LibriSpeech/*
 .venv
 llvc_models/*
 converted_out/*
+
+TASK.md
