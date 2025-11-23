@@ -34,6 +34,30 @@ def infer(model, audio):
     return model(audio.unsqueeze(0).unsqueeze(0)).squeeze(0)
 
 
+def infer_stream_chunk(model, audio_chunk, enc_buf, dec_buf, out_buf, convnet_pre_ctx):
+    """
+    Process a single audio chunk for streaming inference.
+
+    Args:
+        model: LLVC model
+        audio_chunk: torch.Tensor, shape [chunk_len + 2*L] with lookahead context
+        enc_buf, dec_buf, out_buf: Model buffer states
+        convnet_pre_ctx: Optional preprocessing context buffer
+
+    Returns:
+        output: torch.Tensor, converted audio chunk
+        enc_buf, dec_buf, out_buf, convnet_pre_ctx: Updated buffer states
+    """
+    with torch.inference_mode():
+        output, enc_buf, dec_buf, out_buf, convnet_pre_ctx = model(
+            audio_chunk.unsqueeze(0).unsqueeze(0),
+            enc_buf, dec_buf, out_buf,
+            convnet_pre_ctx,
+            pad=(not model.lookahead)
+        )
+    return output, enc_buf, dec_buf, out_buf, convnet_pre_ctx
+
+
 def infer_stream(model, audio, chunk_factor, sr):
     L = model.L
     chunk_len = model.dec_chunk_size * L * chunk_factor
@@ -58,26 +82,20 @@ def infer_stream(model, audio, chunk_factor, sr):
 
     outputs = []
     times = []
-    with torch.inference_mode():
-        enc_buf, dec_buf, out_buf = model.init_buffers(
-            1, torch.device('cpu'))
-        if hasattr(model, 'convnet_pre'):
-            convnet_pre_ctx = model.convnet_pre.init_ctx_buf(
-                1, torch.device('cpu'))
-        else:
-            convnet_pre_ctx = None
-        for chunk in audio_chunks:
-            start = time.time()
-            output, \
-                enc_buf, dec_buf, out_buf, \
-                convnet_pre_ctx = model(chunk.unsqueeze(
-                    0).unsqueeze(0),
-                    enc_buf, dec_buf, out_buf,
-                    convnet_pre_ctx, pad=(not model.lookahead)
-                )
-            outputs.append(output)
-            times.append(time.time() - start)
-        # concatenate outputs
+    enc_buf, dec_buf, out_buf = model.init_buffers(1, torch.device('cpu'))
+    if hasattr(model, 'convnet_pre'):
+        convnet_pre_ctx = model.convnet_pre.init_ctx_buf(1, torch.device('cpu'))
+    else:
+        convnet_pre_ctx = None
+
+    for chunk in audio_chunks:
+        start = time.time()
+        output, enc_buf, dec_buf, out_buf, convnet_pre_ctx = infer_stream_chunk(
+            model, chunk, enc_buf, dec_buf, out_buf, convnet_pre_ctx
+        )
+        outputs.append(output)
+        times.append(time.time() - start)
+    # concatenate outputs
     outputs = torch.cat(outputs, dim=2)
     # Calculate RTF
     avg_time = np.mean(times)
