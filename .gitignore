@@ -7,3 +7,6 @@ llvc_models/*
 converted_out/*
 
 TASK.md
+test_wavs/nagatani_ja.wav
+test_wavs/nagatani.wav
+test_wavs/yoshi.wav
